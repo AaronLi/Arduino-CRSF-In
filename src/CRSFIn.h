@@ -63,6 +63,7 @@ class CRSFIn {
         void begin(HardwareSerial *serial);
         bool update();
         unsigned int getChannelRaw(unsigned int channel);
+        float getChannelFloat(unsigned int channel);
     private:
         HardwareSerial * port;
         crsfFrame_t crsfFrame;

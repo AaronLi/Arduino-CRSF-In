@@ -8,7 +8,7 @@ CRSFIn::CRSFIn(){
 
 void CRSFIn::begin(HardwareSerial *port){
     this->port = port;
-    this->port->begin(400000);
+    this->port->begin(420000);
 }
 
 CRSFIn::~CRSFIn(){
@@ -99,4 +99,9 @@ unsigned int CRSFIn::getChannelRaw(unsigned int channel){
             return 0;
     }
 
+}
+
+float CRSFIn::getChannelFloat(unsigned int channel){
+    float val = (float)this->getChannelRaw(channel);
+    return (val - 172.f) * (1.f/1637.f);
 }
