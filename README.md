@@ -1,1 +1,1 @@
-# Reads CRSF from a Serial Port (UART)
+# Read CRSF (TBS Crossfire) from a Serial Port (UART)
