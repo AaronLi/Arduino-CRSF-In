@@ -105,3 +105,35 @@ float CRSFIn::getChannelFloat(unsigned int channel){
     float val = (float)this->getChannelRaw(channel);
     return (val - 172.f) * (1.f/1637.f);
 }
+
+
+void CRSFIn::transmitGpsFrame(crsfGpsFrame_t &info){
+    uint8_t buffer[17];
+    buffer[0] = 17;
+    buffer[1] = 0x02;
+    writeU32BigEndian(&buffer[2], info.latitude);
+    writeU32BigEndian(&buffer[6], info.longitude);
+    writeU16BigEndian(&buffer[10], info.groundSpeed);
+    writeU16BigEndian(&buffer[12], info.heading);
+    writeU16BigEndian(&buffer[14], info.altitude);
+    buffer[16] = info.satellites;
+    uint8_t crc = 0;
+    for(int i = 0; i<16; i++){
+        crc = crc8_dvb_s2(crc, buffer[i+1]);
+    }
+    this->port->write(0xC8);
+    this->port->write(buffer, 17);        
+    this->port->write(crc);
+}
+
+void writeU32BigEndian(uint8_t *buffer, uint32_t value){
+    buffer[0] = (value >> 24) & 0xFF;
+    buffer[1] = (value >> 16) & 0xFF;
+    buffer[2] = (value >> 8) & 0xFF;
+    buffer[3] = value & 0xFF;
+}
+
+void writeU16BigEndian(uint8_t *buffer, uint16_t value){
+    buffer[0] = (value >> 8) & 0xFF;
+    buffer[1] = value & 0xFF;
+}

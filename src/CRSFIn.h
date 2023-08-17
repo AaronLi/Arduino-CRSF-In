@@ -55,6 +55,17 @@ typedef union crsfFrame_u {
     crsfFrameDef_t frame;
 } crsfFrame_t;
 
+typedef struct crsfGpsInfo {
+    int32_t  latitude; //      Latitude ( degree / 10`000`000 )
+    int32_t  longitude; //     Longitude (degree / 10`000`000 )
+    uint16_t groundSpeed; //   Groundspeed ( km/h / 10 )
+    uint16_t heading; //       GPS heading ( degree / 100 )
+    uint16_t   altitude; //      Altitude ( meter ­1000m offset )
+    uint8_t  satellites; //    Satellites in use ( counter )
+} crsfGpsFrame_t;
+
+void writeU32BigEndian(uint8_t *buffer, uint32_t value);
+void writeU16BigEndian(uint8_t *buffer, uint16_t value);
 
 class CRSFIn {
     public:
@@ -64,6 +75,7 @@ class CRSFIn {
         bool update();
         unsigned int getChannelRaw(unsigned int channel);
         float getChannelFloat(unsigned int channel);
+        void transmitGpsFrame(crsfGpsFrame_t &info);
     private:
         HardwareSerial * port;
         crsfFrame_t crsfFrame;
