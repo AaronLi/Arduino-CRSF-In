@@ -6,7 +6,7 @@ CRSFIn::CRSFIn(){
     this->frame_start_time = micros();
 }
 
-void CRSFIn::begin(HardwareSerial *port){
+void CRSFIn::begin(Uart *port){
     this->port = port;
     this->port->begin(420000);
 }
@@ -16,27 +16,60 @@ CRSFIn::~CRSFIn(){
 }
 
 bool CRSFIn::update(){
-    if(this->port->available() > 0){
+    int available = this->port->available();
+    if(available > 0){
         if(micros() - this->frame_start_time > 1000){
             this->currentIndex = 0;
         }
         if(this->currentIndex == 0){
             this->frame_start_time = micros();
         }
-        const int fullFrameLength = this->currentIndex < 3 ? 5 : min(this->crsfFrame.frame.frameLength + CRSF_FRAME_LENGTH_ADDRESS + CRSF_FRAME_LENGTH_FRAMELENGTH, CRSF_FRAME_SIZE_MAX);
+        const int fullFrameLength = this->currentIndex < 2 ? 5 : min(this->crsfFrame.frame.frameLength + CRSF_FRAME_LENGTH_ADDRESS + CRSF_FRAME_LENGTH_FRAMELENGTH, CRSF_FRAME_SIZE_MAX);
         if(this->currentIndex < fullFrameLength){
-            int numBytesAvailable = this->port->available();
-            int numBytesRead = this->port->readBytes(&this->crsfFrame.bytes[currentIndex], numBytesAvailable);
+            int numBytesRead = this->port->readBytes(&this->crsfFrame.bytes[currentIndex], min(available, CRSF_FRAME_SIZE_MAX - this->currentIndex));
             this->currentIndex += numBytesRead;
-            if(this->currentIndex >= fullFrameLength){
+            if(this->currentIndex >= fullFrameLength && fullFrameLength > 5){
+                this->currentIndex = 0;
+                this->frame_start_time = micros();
                 if(this->crsfFrame.frame.type == 0x16 && this->crsfFrame.bytes[fullFrameLength-1] == this->crsfFrameCRC()){
-                crsfPayloadRcChannelsPacked_t *channels = (crsfPayloadRcChannelsPacked_t*)&this->crsfFrame.frame.payload;
+                    memcpy(&this->outputFrame, &this->crsfFrame, CRSF_FRAME_SIZE_MAX);
+                    this->last_frame_timestamp = millis();
                 return true;
                 }
             }
         }
     }
     return false;
+}
+
+void CRSFIn::updateFast(){
+    int available = this->port->available();
+    if(available > 0){
+        uint32_t start_time = micros();
+        if(start_time - this->frame_start_time > 1000){
+            this->currentIndex = 0;
+            this->frame_start_time = start_time;
+        }
+        const int fullFrameLength =  this->currentIndex < 3 ? 5 : min(this->crsfFrame.frame.frameLength + CRSF_FRAME_LENGTH_ADDRESS + CRSF_FRAME_LENGTH_FRAMELENGTH, CRSF_FRAME_SIZE_MAX);
+        if(this->currentIndex < fullFrameLength){
+            this->crsfFrame.bytes[this->currentIndex] = this->port->read();
+            this->currentIndex++;
+            if(this->currentIndex >= fullFrameLength && fullFrameLength > 5){
+                this->currentIndex = 0;
+                this->frame_start_time = micros();
+                if(this->crsfFrame.frame.type == 0x16 && this->crsfFrame.bytes[fullFrameLength-1] == this->crsfFrameCRC()){
+                    memcpy(&this->outputFrame, &this->crsfFrame, CRSF_FRAME_SIZE_MAX);
+                    this->last_frame_timestamp = millis();
+                }
+            }
+        }
+    }
+}
+
+// Use only this or update, not both
+void CRSFIn::IrqHandler() {
+    this->port->IrqHandler();
+    this->updateFast();
 }
 
 uint8_t CRSFIn::crc8_dvb_s2(uint8_t crc, unsigned char a){
@@ -61,7 +94,7 @@ uint8_t CRSFIn::crsfFrameCRC(){
 }
 
 unsigned int CRSFIn::getChannelRaw(unsigned int channel){
-    crsfPayloadRcChannelsPacked_t *channels = (crsfPayloadRcChannelsPacked_t*)&this->crsfFrame.frame.payload;
+    crsfPayloadRcChannelsPacked_t *channels = (crsfPayloadRcChannelsPacked_t*)&this->outputFrame.frame.payload;
     switch(channel){
         case 0:
             return channels->chan0;
@@ -126,11 +159,34 @@ void CRSFIn::transmitGpsFrame(crsfGpsFrame_t &info){
     this->port->write(crc);
 }
 
+void CRSFIn::transmitVoltageFrame(crsfVoltageFrame_t &info){
+    uint8_t buffer[10];
+    buffer[0] = 10;
+    buffer[1] = 0x08;
+    writeU16BigEndian(&buffer[2], info.voltage);
+    writeU16BigEndian(&buffer[4], info.current);
+    writeU24BigEndian(&buffer[6], info.fuel);
+    buffer[9] = info.battery;   
+    uint8_t crc = 0;
+    for(int i = 0; i<9; i++){
+        crc = crc8_dvb_s2(crc, buffer[i+1]);
+    }
+    this->port->write(0xC8);
+    this->port->write(buffer, 10);
+    this->port->write(crc);
+}
+
 void writeU32BigEndian(uint8_t *buffer, uint32_t value){
     buffer[0] = (value >> 24) & 0xFF;
     buffer[1] = (value >> 16) & 0xFF;
     buffer[2] = (value >> 8) & 0xFF;
     buffer[3] = value & 0xFF;
+}
+
+void writeU24BigEndian(uint8_t *buffer, uint32_t value){
+    buffer[0] = (value >> 16) & 0xFF;
+    buffer[1] = (value >> 8) & 0xFF;
+    buffer[2] = value & 0xFF;
 }
 
 void writeU16BigEndian(uint8_t *buffer, uint16_t value){

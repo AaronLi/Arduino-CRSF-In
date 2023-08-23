@@ -64,27 +64,41 @@ typedef struct crsfGpsInfo {
     uint8_t  satellites; //    Satellites in use ( counter )
 } crsfGpsFrame_t;
 
+typedef struct crsfVoltageInfo {
+    uint16_t voltage; //    Voltage ( mV * 100 )
+    uint16_t current; //   Current ( mA * 100 )
+    uint32_t fuel; //   Fuel ( drawn mAh )
+    uint8_t battery; //     Battery remaining ( percent )
+} crsfVoltageFrame_t;
+
 void writeU32BigEndian(uint8_t *buffer, uint32_t value);
+void writeU24BigEndian(uint8_t *buffer, uint32_t value);
 void writeU16BigEndian(uint8_t *buffer, uint16_t value);
 
 class CRSFIn {
     public:
+        uint32_t last_frame_timestamp;
+
         CRSFIn();
         ~CRSFIn();
-        void begin(HardwareSerial *serial);
+        void begin(Uart *serial);
         bool update();
         unsigned int getChannelRaw(unsigned int channel);
         float getChannelFloat(unsigned int channel);
         void transmitGpsFrame(crsfGpsFrame_t &info);
+        void transmitVoltageFrame(crsfVoltageFrame_t &info);
+        void IrqHandler();
     private:
-        HardwareSerial * port;
+        Uart * port;
         crsfFrame_t crsfFrame;
+        crsfFrame_t outputFrame;
         uint8_t currentIndex;
         uint32_t frame_start_time;
 
         
         static uint8_t crc8_dvb_s2(uint8_t crc, unsigned char a);
         uint8_t crsfFrameCRC(void);
+        void updateFast();
 };
 
 #endif
