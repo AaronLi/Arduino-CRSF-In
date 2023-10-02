@@ -94,6 +94,7 @@ class CRSFIn {
         crsfFrame_t outputFrame;
         uint8_t currentIndex;
         uint32_t frame_start_time;
+        uint32_t us_per_packet;
 
         
         static uint8_t crc8_dvb_s2(uint8_t crc, unsigned char a);

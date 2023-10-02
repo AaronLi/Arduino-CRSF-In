@@ -9,6 +9,7 @@ CRSFIn::CRSFIn(){
 void CRSFIn::begin(Uart *port){
     this->port = port;
     this->port->begin(420000);
+    this->us_per_packet = 1750;
 }
 
 CRSFIn::~CRSFIn(){
@@ -17,13 +18,13 @@ CRSFIn::~CRSFIn(){
 
 bool CRSFIn::update(){
     int available = this->port->available();
-    if(available > 0){
-        if(micros() - this->frame_start_time > 1000){
+    if(micros() - this->frame_start_time > this->us_per_packet){
             this->currentIndex = 0;
-        }
-        if(this->currentIndex == 0){
-            this->frame_start_time = micros();
-        }
+    }
+    if(this->currentIndex == 0){
+        this->frame_start_time = micros();
+    }
+    if(available > 0){
         const int fullFrameLength = this->currentIndex < 2 ? 5 : min(this->crsfFrame.frame.frameLength + CRSF_FRAME_LENGTH_ADDRESS + CRSF_FRAME_LENGTH_FRAMELENGTH, CRSF_FRAME_SIZE_MAX);
         if(this->currentIndex < fullFrameLength){
             int numBytesRead = this->port->readBytes(&this->crsfFrame.bytes[currentIndex], min(available, CRSF_FRAME_SIZE_MAX - this->currentIndex));
@@ -43,24 +44,20 @@ bool CRSFIn::update(){
 }
 
 void CRSFIn::updateFast(){
-    int available = this->port->available();
-    if(available > 0){
-        uint32_t start_time = micros();
-        if(start_time - this->frame_start_time > 1000){
+    uint32_t start_time = micros();
+    if(start_time - this->frame_start_time > this->us_per_packet){
+        this->currentIndex = 0;
+        this->frame_start_time = start_time;
+    }
+    const int fullFrameLength =  this->currentIndex < 3 ? 5 : min(this->crsfFrame.frame.frameLength + CRSF_FRAME_LENGTH_ADDRESS + CRSF_FRAME_LENGTH_FRAMELENGTH, CRSF_FRAME_SIZE_MAX);
+    if(this->currentIndex < fullFrameLength){
+        this->crsfFrame.bytes[this->currentIndex++] = this->port->read();
+        if(this->currentIndex >= fullFrameLength){
             this->currentIndex = 0;
-            this->frame_start_time = start_time;
-        }
-        const int fullFrameLength =  this->currentIndex < 3 ? 5 : min(this->crsfFrame.frame.frameLength + CRSF_FRAME_LENGTH_ADDRESS + CRSF_FRAME_LENGTH_FRAMELENGTH, CRSF_FRAME_SIZE_MAX);
-        if(this->currentIndex < fullFrameLength){
-            this->crsfFrame.bytes[this->currentIndex] = this->port->read();
-            this->currentIndex++;
-            if(this->currentIndex >= fullFrameLength && fullFrameLength > 5){
-                this->currentIndex = 0;
-                this->frame_start_time = micros();
-                if(this->crsfFrame.frame.type == 0x16 && this->crsfFrame.bytes[fullFrameLength-1] == this->crsfFrameCRC()){
-                    memcpy(&this->outputFrame, &this->crsfFrame, CRSF_FRAME_SIZE_MAX);
-                    this->last_frame_timestamp = millis();
-                }
+            this->frame_start_time = micros();
+            if(this->crsfFrame.bytes[fullFrameLength-1] == this->crsfFrameCRC() && this->crsfFrame.frame.type == 0x16){
+                memcpy(&this->outputFrame, &this->crsfFrame, CRSF_FRAME_SIZE_MAX);
+                this->last_frame_timestamp = millis();
             }
         }
     }
@@ -69,7 +66,9 @@ void CRSFIn::updateFast(){
 // Use only this or update, not both
 void CRSFIn::IrqHandler() {
     this->port->IrqHandler();
-    this->updateFast();
+    while(this->port->available()){
+        this->updateFast();
+    }
 }
 
 uint8_t CRSFIn::crc8_dvb_s2(uint8_t crc, unsigned char a){
